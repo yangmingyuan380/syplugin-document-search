@@ -3,10 +3,22 @@
     let pageSize: number = SettingConfig.ins.pageSize;
     let maxExpandCount: number = SettingConfig.ins.maxExpandCount;
     let showChildDocument: boolean = SettingConfig.ins.showChildDocument;
+    let esUrl: string = SettingConfig.ins.esUrl;
+    let esIndexName: string = SettingConfig.ins.esIndexName;
 
     function pageSizeChange(event) {
         pageSize = event.target.value;
         SettingConfig.ins.updatePageSize(pageSize);
+    }
+
+    function esUrlChange(event) {
+        esUrl = event.target.value;
+        SettingConfig.ins.updateEsUrl(esUrl);
+    }
+
+    function esIndexNameChange(event) {
+        esIndexName = event.target.value;
+        SettingConfig.ins.updateEsUrl(esIndexName);
     }
 
     function maxExpandCountChange(event) {
@@ -75,6 +87,34 @@
             type="checkbox"
             checked={showChildDocument}
             on:change={showChildDocumentChange}
+        />
+    </label>
+    <label class="fn__flex b3-label config__item">
+        <svg class="ft__on-surface svg fn__flex-center"
+            ><use xlink:href="#iconFile"></use></svg
+        >
+        <span class="fn__space"></span>
+        <div class="fn__flex-1 fn__flex-center">es地址</div>
+        <span class="fn__space"></span>
+        <input
+            class="b3-text-field fn__flex-center fn__size200"
+            type="text"
+            bind:value={esUrl}
+            on:change={esUrlChange}
+        />
+    </label>
+    <label class="fn__flex b3-label config__item">
+        <svg class="ft__on-surface svg fn__flex-center"
+            ><use xlink:href="#iconFile"></use></svg
+        >
+        <span class="fn__space"></span>
+        <div class="fn__flex-1 fn__flex-center">es索引名称</div>
+        <span class="fn__space"></span>
+        <input
+            class="b3-text-field fn__flex-center fn__size200"
+            type="text"
+            bind:value={esIndexName}
+            on:change={esIndexNameChange}
         />
     </label>
 </div>

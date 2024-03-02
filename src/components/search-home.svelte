@@ -1,16 +1,13 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
-    import { lsNotebooks, sql as query } from "@/utils/api";
-    import {
-        generateDocumentCountSql,
-        generateDocumentSearchSql,
-    } from "@/libs/search-sql";
+    import { lsNotebooks, sql } from "@/utils/api";
     import {
         // showMessage,
         Protyle,
         openTab,
         openMobileFileById,
         getFrontend,
+        Plugin,
         Dialog,
     } from "siyuan";
     import SearchResultItem from "@/libs/search-result-item.svelte";
@@ -21,9 +18,12 @@
     import SettingNotebook from "@/libs/setting-notebook.svelte";
     import SettingAttr from "@/libs/setting-attr.svelte";
     import SettingOther from "@/libs/setting-other.svelte";
+    import axios from "axios";
+    import moment from "moment";
 
     export let app;
     export let showPreview;
+    export let plugin: Plugin;
 
     let isMobile: boolean;
     const frontEnd = getFrontend();
@@ -60,7 +60,7 @@
     });
 
     function handleSearchDragMousdown(event: MouseEvent) {
-        /* 复制 https://vscode.dev/github/siyuan-note/siyuan/blob/master/app/src/search/util.ts#L407 
+        /* 复制 https://vscode.dev/github/siyuan-note/siyuan/blob/master/app/src/search/util.ts#L407
             #genSearch 方法下的 const dragElement = element.querySelector(".search__drag"); 处
         */
         const dragElement = element.querySelector(".search__drag");
@@ -242,6 +242,113 @@
         refreshSearch(searchInputKey, page);
     }
 
+    async function syncDataToEs() {
+        console.log("开始同步数据到ElasticSearch");
+        const lastSyncTimestampKey = "lastSyncTimestamp";
+        const timeFormat = "YYYYMMDDHHmmss";
+        let lastSyncTimestamp = await plugin.loadData(lastSyncTimestampKey);
+        const timestamp = moment().format(timeFormat);
+        // 默认同步近30天
+        if (!lastSyncTimestamp) {
+            lastSyncTimestamp = moment()
+                .subtract(30, "days")
+                .format(timeFormat);
+        }
+        // 查询新创建block
+        const queryField =
+            "id, root_id,box,hash,hpath,ial, content,fcontent, type, created, updated";
+        const newCreatedData = await sql(
+            `select ${queryField} from blocks where created > '${lastSyncTimestamp}'`,
+        );
+        // 查询修改的block
+        const updatedData = await sql(
+            `select ${queryField} from blocks where updated > '${lastSyncTimestamp}'`,
+        );
+        let esUrl = SettingConfig.ins.esUrl;
+        let esIndexName = SettingConfig.ins.esIndexName;
+        // 插入文档
+        const insertData = async (newCreatedData) => {
+            if (newCreatedData.length == 0) {
+                return;
+            }
+            let bulkInsertData = [];
+            newCreatedData.forEach((item) => {
+                // 操作和元数据行
+                bulkInsertData.push({
+                    index: { _index: esIndexName, _type: "_doc" },
+                });
+                // 文档本身的行
+                bulkInsertData.push(item);
+            });
+            const bulkInsertDataStr =
+                bulkInsertData.map((line) => JSON.stringify(line)).join("\n") +
+                "\n";
+            try {
+                const response = await axios.post(
+                    `${esUrl}/${esIndexName}/_bulk`,
+                    bulkInsertDataStr,
+                    {
+                        headers: {
+                            "Content-Type": "application/x-ndjson",
+                        },
+                    },
+                );
+                console.log("Bulk insert response:", response.data);
+            } catch (error) {
+                console.error(
+                    "Error in bulk insert:",
+                    error.response ? error.response.data : error,
+                );
+            }
+        };
+        // 执行批量操作
+        const bulkUpdate = async (updatedData) => {
+            if (updatedData.length == 0) {
+                return;
+            }
+            // 修改文档
+            const bulkUpdateData = [];
+            // 构建批量操作的数据
+            updatedData.forEach((doc) => {
+                // 指定操作和文档ID
+                bulkUpdateData.push({
+                    index: { _index: esIndexName, _id: doc.id, _type: "_doc" },
+                });
+                // 指定文档的新内容
+                bulkUpdateData.push(doc);
+            });
+            const bulkUpdateDataStr =
+                bulkUpdateData.map((line) => JSON.stringify(line)).join("\n") +
+                "\n";
+            try {
+                const response = await axios.post(
+                    `${esUrl}/_bulk`,
+                    bulkUpdateDataStr,
+                    {
+                        headers: { "Content-Type": "application/x-ndjson" },
+                    },
+                );
+                console.log("Bulk update response:", response.data);
+            } catch (error) {
+                console.error("Error performing bulk update:", error.message);
+            }
+        };
+        try {
+            await Promise.all([
+                insertData(newCreatedData),
+                bulkUpdate(updatedData),
+            ]);
+            await plugin.saveData(lastSyncTimestampKey, timestamp);
+            console.log('es数据同步成功');
+        } catch (error) {
+            console.error(
+                "An error occurred during the ElasticSearch update process:",
+                error,
+            );
+            // 处理整体错误
+        }
+    }
+
     function refreshSearch(searchKey: string, pageNum: number) {
         // 去除多余的空格，并将输入框的值按空格分割成数组
         const keywords = searchKey.trim().replace(/\s+/g, " ").split(" ");
@@ -271,48 +378,139 @@
         updateNotebookMap();
 
         let pageSize = SettingConfig.ins.pageSize;
+        let esUrl = SettingConfig.ins.esUrl;
+        let esIndexName = SettingConfig.ins.esIndexName;
+
         let types = SettingConfig.ins.includeTypes;
-        let queryFields = SettingConfig.ins.includeQueryFields;
         let excludeNotebookIds = SettingConfig.ins.excludeNotebookIds;
-        let pages = [pageNum, pageSize];
         selectedIndex = -1;
 
         isSearching++;
-        let documentCountSql = generateDocumentCountSql(
-            keywords,
-            types,
-            queryFields,
-            excludeNotebookIds,
-        );
-        let queryDocumentCountPromise: Promise<any[]> = query(documentCountSql);
-        queryDocumentCountPromise
-            .then((documentCountResults: any[]) => {
-                processSearchResultCount(
-                    documentCountResults,
-                    pageNum,
-                    pageSize,
-                );
-            })
-            .catch((error) => {
-                console.error("Error:", error);
-            });
 
-        isSearching++;
-        let documentSearchSql = generateDocumentSearchSql(
-            keywords,
-            pages,
-            types,
-            queryFields,
-            excludeNotebookIds,
+        const url = `${esUrl}/${esIndexName}/_search`;
+        const keywordQueries = {
+            match: { content: { query: keywords.join(" ") } },
+        };
+        // 根据root_id分组，并计算每组平均得分降序排序
+        const esQueryCount = {
+            size: 0,
+            query: {
+                bool: {
+                    must_not: {
+                        terms: {
+                            box: excludeNotebookIds,
+                        },
+                    },
+                    filter: {
+                        terms: {
+                            type: types,
+                        },
+                    },
+                    should: keywordQueries,
+                    minimum_should_match: 1,
+                },
+            },
+            aggs: {
+                // 添加聚合查询
+                root_id_groups: {
+                    // 自定义的聚合名称
+                    terms: {
+                        field: "root_id", // 根据root_id字段进行分组
+                        size: 10000, // 可根据需要调整最大分组数
+                        order: {
+                            average_score: "desc", // 根据平均得分降序排序
+                        },
+                    },
+                    aggs: {
+                        average_score: {
+                            avg: {
+                                script: {
+                                    source: "_score",
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        let esRootIdsresponse;
+        try {
+            esRootIdsresponse = await axios.post(url, esQueryCount);
+        } catch (error) {
+            console.error(
+                "es请求总数失败:",
+                error.message,
+                error?.response?.data,
+            );
+        }
+        const documentCount =
+            esRootIdsresponse.data.aggregations.root_id_groups.buckets.length;
+        const allRootIds =
+            esRootIdsresponse.data.aggregations.root_id_groups.buckets.map(
+                (it) => {
+                    return it.key;
+                },
+            );
+        processSearchResultCount([{ documentCount }], pageNum, pageSize);
+        // 手动分页
+        const rootIds = allRootIds.slice(
+            (pageNum - 1) * pageSize,
+            (pageNum - 1) * pageSize + pageSize,
         );
-        let documentSearchPromise: Promise<Block[]> = query(documentSearchSql);
-        documentSearchPromise
-            .then((documentSearchResults: Block[]) => {
-                processSearchResults(documentSearchResults, keywords);
-            })
-            .catch((error) => {
-                console.error("Error:", error);
-            });
+        // 只查询块
+        const typesNod = types.filter((it) => it != "d");
+        const esBlockQuery = {
+            size: 1000,
+            query: {
+                bool: {
+                    must_not: [
+                        { terms: { box: excludeNotebookIds } }, // 假设 excludeNotebookIds 是一个包含ID的数组
+                        { term: { type: "d" } }, // 使用 term 查询排除 type 为 'd' 的文档
+                    ],
+                    filter: [
+                        // 使用数组包含多个过滤条件
+                        { terms: { type: typesNod } },
+                        { terms: { root_id: rootIds } },
+                    ],
+                    should: keywordQueries,
+                    minimum_should_match: 1,
+                },
+            },
+        };
+        // 只查询文档
+        const esDocQuery = {
+            size: pageSize,
+            query: {
+                bool: {
+                    filter: { terms: { _id: rootIds } },
+                },
+            },
+        };
+        let esBlockresponse;
+        let esDocresponse;
+        try {
+            [esBlockresponse, esDocresponse] = await Promise.all([
+                axios.post(url, esBlockQuery),
+                axios.post(url, esDocQuery),
+            ]);
+        } catch (error) {
+            console.error(
+                "es查询请求失败:",
+                error.message,
+                error?.response?.data,
+            );
+        }
+        const documentSearchResults = esBlockresponse.data.hits.hits.map(
+            (it) => {
+                return it._source;
+            },
+        );
+        const rootDocs = esDocresponse.data.hits.hits.map((it) => {
+            return it._source;
+        });
+        rootDocs.sort((a, b) => rootIds.indexOf(a.id) - rootIds.indexOf(b.id));
+        processSearchResults([...rootDocs, ...documentSearchResults], keywords);
     }
 
     function processSearchResultCount(
@@ -865,7 +1063,20 @@
             on:click={clickSearchNotebookFilter}
             on:keydown={handleKeyDownDefault}
         >
-            <svg><use xlink:href="#iconSearchSettingExcludeNotebook"></use></svg>
+            <svg><use xlink:href="#iconSearchSettingExcludeNotebook"></use></svg
+            >
+        </span>
+
+        <span class="fn__space"></span>
+        <span
+            id="syncData"
+            aria-label="数据同步"
+            class="block__icon block__icon--show ariaLabel"
+            data-position="9bottom"
+            on:click={syncDataToEs}
+            on:keydown={handleKeyDownDefault}
+        >
+            <svg><use xlink:href="#iconRefresh"></use></svg>
         </span>
         <span class="fn__space"></span>
         <span

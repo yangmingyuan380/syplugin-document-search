@@ -16,6 +16,8 @@ export class SettingConfig {
         excludeNotebookIds: [] as string[], // 排除的笔记本ID
         maxExpandCount: 100 as number,  // 最大展开数量，查询结果超过这个数量会自动折叠
         showChildDocument: true as boolean, // 是否再分组下面显示文档块，主要是方便复制文档块的id或引用块。
+        esUrl: 'http://192.168.31.2:9200' as string,
+        esIndexName: 'siyuan_blocks' as string
     };
 
     public static get ins(): SettingConfig {
@@ -103,6 +105,24 @@ export class SettingConfig {
 
     get showChildDocument(): boolean {
         return this.settings.showChildDocument;
+    }
+
+    get esUrl(): string {
+        return this.settings.esUrl;
+    }
+
+    get esIndexName(): string {
+        return this.settings.esIndexName;
+    }
+
+    updateEsUrl(url: string) {
+        this.settings.esUrl = url;
+        this.save();
+    }
+
+    updateEsIndexName(indexName: string) {
+        this.settings.esIndexName = indexName;
+        this.save();
     }
 
     updatePageSize(pageSize: number) {

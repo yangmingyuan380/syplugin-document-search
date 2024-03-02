@@ -22,6 +22,7 @@ export default class PluginSample extends Plugin {
     private documentSearchTab: SearchHomeExample;
 
     async onload() {
+        const plugin = this;
         SettingConfig.ins.load(this);
 
         const frontEnd = getFrontend();
@@ -72,6 +73,7 @@ export default class PluginSample extends Plugin {
                     props: {
                         app: this.app,
                         showPreview: false,
+                        plugin,
                     }
                 });
             },
@@ -102,6 +104,7 @@ export default class PluginSample extends Plugin {
         // });
         // this.documentSearchTab = documentSearchTab;
         let _this = this;
+        const plugin = this;
         this.addTab({
             type: SEARCH_TAB_TYPE,
             init() {
@@ -110,6 +113,7 @@ export default class PluginSample extends Plugin {
                     props: {
                         app: this.app,
                         showPreview: true,
+                        plugin,
                     }
                 });
 
@@ -172,7 +176,7 @@ export default class PluginSample extends Plugin {
     //         // 创建搜索组件的容器元素
     //         let searchContainerDiv = document.createElement('div');
     //         searchContainerDiv.className = mobileDocSearchClassName;
-    //         // 在 b3-menu__title 后面插入 
+    //         // 在 b3-menu__title 后面插入
     //         let b3MenuTitle = menuElement.querySelector('.b3-menu__title');
     //         menuElement.insertBefore(searchContainerDiv, b3MenuTitle.nextSibling);
 
