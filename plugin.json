@@ -1,6 +1,6 @@
 {
-  "name": "syplugin-document-search",
-  "author": "Misuzu2027",
+  "name": "syplugin-document-es-search",
+  "author": "Misuzu2027,Rick",
   "url": "https://github.com/Misuzu2027/syplugin-document-search",
   "version": "0.6.0",
   "minAppVersion": "2.10.14",
@@ -11,9 +11,9 @@
     "all"
   ],
   "displayName": {
-    "default": "基于文档搜索",
-    "en_US": "document search",
-    "zh_CN": "基于文档搜索"
+    "default": "基于文档搜索(es)",
+    "en_US": "document search(es)",
+    "zh_CN": "基于文档搜索(es)"
   },
   "description": {
     "en_US": "This plugin operates differently from the built-in block-level queries of the system. It conducts searches on a document basis.",
