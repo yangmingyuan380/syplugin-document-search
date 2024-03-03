@@ -7,7 +7,6 @@
         openTab,
         openMobileFileById,
         getFrontend,
-        Plugin,
         Dialog,
     } from "siyuan";
     import SearchResultItem from "@/libs/search-result-item.svelte";
@@ -23,7 +22,6 @@
 
     export let app;
     export let showPreview;
-    export let plugin: Plugin;
 
     let isMobile: boolean;
     const frontEnd = getFrontend();
@@ -242,32 +240,56 @@
         refreshSearch(searchInputKey, page);
     }
 
+    async function doEsBluk(blukAction) {
+        const esUrl = SettingConfig.ins.esUrl;
+        const esIndexName = SettingConfig.ins.esIndexName;
+        const esBulkUrl = `${esUrl}/${esIndexName}/_bulk`;
+        const blukActionStr =
+            blukAction.map((line) => JSON.stringify(line)).join("\n") + "\n";
+        return await axios.post(esBulkUrl, blukActionStr, {
+            headers: {
+                "Content-Type": "application/x-ndjson",
+            },
+        });
+    }
+
     async function syncDataToEs() {
         console.log("开始同步数据到ElasticSearch");
-        const lastSyncTimestampKey = "lastSyncTimestamp";
         const timeFormat = "YYYYMMDDHHmmss";
-        let lastSyncTimestamp = await plugin.loadData(lastSyncTimestampKey);
+        let lastSyncTimestamp = SettingConfig.ins.lastSyncTimestamp;
         const timestamp = moment().format(timeFormat);
-        // 默认同步近30天
-        if (!lastSyncTimestamp) {
-            lastSyncTimestamp = moment()
-                .subtract(30, "days")
-                .format(timeFormat);
-        }
+        const esIndexName = SettingConfig.ins.esIndexName;
+        const deleteData = async () => {
+            // 查询删除的block
+            const lastSyncDateTime = moment(lastSyncTimestamp, timeFormat)
+                .subtract(8, "hours")
+                .format("YYYY-MM-DD HH:mm:ss");
+            const deletedBlockIds = await sql(
+                `select deleted_record_id from delete_logs where deleted_at > '${lastSyncDateTime}'`,
+            );
+            // 从es中删除数据
+            if (deletedBlockIds.length > 0) {
+                let bulkDeleteData = [];
+                deletedBlockIds.forEach((it) => {
+                    bulkDeleteData.push({
+                        delete: {
+                            _index: esIndexName,
+                            _id: it["deleted_record_id"],
+                            _type: "_doc",
+                        },
+                    });
+                });
+                await doEsBluk(bulkDeleteData);
+            }
+        };
         // 查询新创建block
         const queryField =
             "id, root_id,box,hash,hpath,ial, content,fcontent, type, created, updated";
-        const newCreatedData = await sql(
-            `select ${queryField} from blocks where created > '${lastSyncTimestamp}'`,
-        );
-        // 查询修改的block
-        const updatedData = await sql(
-            `select ${queryField} from blocks where updated > '${lastSyncTimestamp}'`,
-        );
-        let esUrl = SettingConfig.ins.esUrl;
-        let esIndexName = SettingConfig.ins.esIndexName;
         // 插入文档
-        const insertData = async (newCreatedData) => {
+        const insertData = async (queryField) => {
+            const newCreatedData = await sql(
+                `select ${queryField} from blocks where created > '${lastSyncTimestamp}'`,
+            );
             if (newCreatedData.length == 0) {
                 return;
             }
@@ -280,29 +302,14 @@
                 // 文档本身的行
                 bulkInsertData.push(item);
             });
-            const bulkInsertDataStr =
-                bulkInsertData.map((line) => JSON.stringify(line)).join("\n") +
-                "\n";
-            try {
-                const response = await axios.post(
-                    `${esUrl}/${esIndexName}/_bulk`,
-                    bulkInsertDataStr,
-                    {
-                        headers: {
-                            "Content-Type": "application/x-ndjson",
-                        },
-                    },
-                );
-                console.log("Bulk insert response:", response.data);
-            } catch (error) {
-                console.error(
-                    "Error in bulk insert:",
-                    error.response ? error.response.data : error,
-                );
-            }
+            await doEsBluk(bulkInsertData);
         };
         // 执行批量操作
-        const bulkUpdate = async (updatedData) => {
+        const bulkUpdate = async (queryField) => {
+            // 查询修改的block
+            const updatedData = await sql(
+                `select ${queryField} from blocks where updated > '${lastSyncTimestamp}'`,
+            );
             if (updatedData.length == 0) {
                 return;
             }
@@ -317,35 +324,17 @@
                 // 指定文档的新内容
                 bulkUpdateData.push(doc);
             });
-            const bulkUpdateDataStr =
-                bulkUpdateData.map((line) => JSON.stringify(line)).join("\n") +
-                "\n";
-            try {
-                const response = await axios.post(
-                    `${esUrl}/_bulk`,
-                    bulkUpdateDataStr,
-                    {
-                        headers: { "Content-Type": "application/x-ndjson" },
-                    },
-                );
-                console.log("Bulk update response:", response.data);
-            } catch (error) {
-                console.error("Error performing bulk update:", error.message);
-            }
+            await doEsBluk(bulkUpdateData);
         };
         try {
             await Promise.all([
-                insertData(newCreatedData),
-                bulkUpdate(updatedData),
+                insertData(queryField),
+                bulkUpdate(queryField),
+                deleteData(),
             ]);
-            await plugin.saveData(lastSyncTimestampKey, timestamp);
-            console.log('es数据同步成功');
+            SettingConfig.ins.updateLastSyncTimestamp(timestamp);
         } catch (error) {
-            console.error(
-                "An error occurred during the ElasticSearch update process:",
-                error,
-            );
-            // 处理整体错误
+            console.log("同步数据到ElasticSearch失败", error);
         }
     }
 
@@ -754,6 +743,7 @@
             },
         });
     }
+
     function htmlHighlight(contentElement: HTMLElement, keywords: string[]) {
         if (!contentElement || !keywords) {
             return;

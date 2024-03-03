@@ -5,6 +5,7 @@
     let showChildDocument: boolean = SettingConfig.ins.showChildDocument;
     let esUrl: string = SettingConfig.ins.esUrl;
     let esIndexName: string = SettingConfig.ins.esIndexName;
+    let lastSyncTimestamp: string = SettingConfig.ins.lastSyncTimestamp;
 
     function pageSizeChange(event) {
         pageSize = event.target.value;
@@ -19,6 +20,11 @@
     function esIndexNameChange(event) {
         esIndexName = event.target.value;
         SettingConfig.ins.updateEsUrl(esIndexName);
+    }
+
+    function lastSyncTimestampChange(event) {
+        lastSyncTimestamp = event.target.value;
+        SettingConfig.ins.updateEsUrl(lastSyncTimestamp);
     }
 
     function maxExpandCountChange(event) {
@@ -115,6 +121,20 @@
             type="text"
             bind:value={esIndexName}
             on:change={esIndexNameChange}
+        />
+    </label>
+    <label class="fn__flex b3-label config__item">
+        <svg class="ft__on-surface svg fn__flex-center"
+        ><use xlink:href="#iconFile"></use></svg
+        >
+        <span class="fn__space"></span>
+        <div class="fn__flex-1 fn__flex-center">es索引名称</div>
+        <span class="fn__space"></span>
+        <input
+                class="b3-text-field fn__flex-center fn__size200"
+                type="text"
+                bind:value={lastSyncTimestamp}
+                on:change={lastSyncTimestampChange}
         />
     </label>
 </div>

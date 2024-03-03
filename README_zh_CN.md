@@ -1,7 +1,7 @@
 # 基于文档搜索（es版）
 
 因为自己思源笔记文档较多，使用sql进行查询有时速度很慢，因此就考虑将数据同步到elasticsearch 进行查询，修改了Misuzu2027的基于文档搜索的插件。可以将数据同步到es。并且默认从es进行搜索，个人感觉速度更快些。
-插件里增加了将sqlite中blocks表部分数据同步到es的功能，但是需要手动同步，而且初始时，最好运行下面python脚本同步
+插件里增加了将sqlite中blocks表部分数据同步到es的功能，但是需要手动同步，而且初始时，最好运行下面python脚本同步。后续可以使用同步按钮同步。
 ```python
 from sqlite3 import connect
 from elasticsearch import Elasticsearch
@@ -96,6 +96,24 @@ def bulk_insert(es, rows, batch_size=10000):
 
 success_count = bulk_insert(es, rows)
 print(f"成功插入 {success_count} 条文档")
+```
+此外因为思源删除block是硬删除，因此需要使用下面脚本在sqlite里创建删除的触发器
+```sql
+--- 创建删除日志表
+CREATE TABLE IF NOT EXISTS delete_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  deleted_record_id TEXT
+);
+--- 创建删除触发器
+  CREATE TRIGGER IF NOT EXISTS after_delete_blocks
+  AFTER DELETE
+  ON blocks
+  FOR EACH ROW
+  BEGIN
+    INSERT INTO delete_logs (deleted_record_id)
+    VALUES (OLD.id);
+  END;
 ```
 
 # 更新日志
