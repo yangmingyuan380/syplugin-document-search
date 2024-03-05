@@ -17,7 +17,7 @@
   },
   "description": {
     "en_US": "This plugin operates differently from the built-in block-level queries of the system. It conducts searches on a document basis.",
-    "zh_CN": "这个插件与系统内置的块级别查询不同，它以文档为单位进行查询。"
+    "zh_CN": "将数据同步到es，以文档为单位进行查询。"
   },
   "readme": {
     "default": "README_zh_CN.md",

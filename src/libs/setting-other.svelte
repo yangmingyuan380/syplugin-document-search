@@ -19,12 +19,12 @@
 
     function esIndexNameChange(event) {
         esIndexName = event.target.value;
-        SettingConfig.ins.updateEsUrl(esIndexName);
+        SettingConfig.ins.updateEsIndexName(esIndexName);
     }
 
     function lastSyncTimestampChange(event) {
         lastSyncTimestamp = event.target.value;
-        SettingConfig.ins.updateEsUrl(lastSyncTimestamp);
+        SettingConfig.ins.updateLastSyncTimestamp(lastSyncTimestamp);
     }
 
     function maxExpandCountChange(event) {
